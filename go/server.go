@@ -13,9 +13,9 @@ import (
 const DefaultPort = "8080"
 
 type sourceStruct struct {
-	FirstName string
-	LastName  string
-	Age       int
+	//FirstName string
+	//LastName  string
+	Age float64
 }
 
 var structToEncode = sourceStruct{}
@@ -29,9 +29,9 @@ func asyncUpdate() {
 	mu.Lock()
 	defer mu.Unlock()
 
-	structToEncode.FirstName = "ben"
-	structToEncode.LastName = "pritchard"
-	structToEncode.Age = 4
+	//structToEncode.FirstName = "ben"
+	//structToEncode.LastName = "pritchard"
+	structToEncode.Age = 3.14156
 }
 
 func getSchemaHanlder() http.HandlerFunc {
