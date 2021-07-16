@@ -2,6 +2,8 @@ github.com/bminer/schemer v0.0.0-20210423164823-b68c31a3a818 h1:F+5JiFNvO0IYYGk/
 github.com/bminer/schemer v0.0.0-20210423164823-b68c31a3a818/go.mod h1:FoT09iRHpQjiXIdYZqiAa54uzWiFj9KiMNKn5aAkLd0=
 github.com/bminer/schemer v0.0.0-20210611192654-982f4821acdc h1:9BXcOxxaBG4r1WzZ0yULDWMb+R6c2MiW1cYGi7GicjA=
 github.com/bminer/schemer v0.0.0-20210611192654-982f4821acdc/go.mod h1:/OiTsZm9qqxIagBp+q4P1dd2x5rhVe1On5BRtmsVYMw=
+github.com/bminer/schemer v0.0.0-20210713203803-4989651e431b h1:oS08qzC1HSyTMWmO3jsBg7XlIo6N2CXlyf9m0lOuJc4=
+github.com/bminer/schemer v0.0.0-20210713203803-4989651e431b/go.mod h1:/OiTsZm9qqxIagBp+q4P1dd2x5rhVe1On5BRtmsVYMw=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=

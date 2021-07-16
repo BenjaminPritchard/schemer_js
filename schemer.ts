@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/explicit-module-boundary-types */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // schemer.ts - typescript schemer decoder
 // this code is setup for run under node.js
 // currently it includes the functionality to both:
@@ -8,50 +10,91 @@
 
 "use strict";
 
-import fetch from "node-fetch"
-
 let offset = 0;
 let lastVarIntSize = 0;
 
-// this routine taken from: https://github.com/chrisdickinson/varint/blob/master/decode.js
-function doVarIntDecode(buf:Uint8Array, offset:number) {
-  var MSB = 0x80;
-  var REST = 0x7f;
+// typesafe way to get "any" data into expected types
+export class SchemerDecoder {
+  private internal_data: Record<string, any>;
 
-  var res = 0,
-    offset = offset || 0,
+  constructor(data: Record<string, any>) {
+    this.internal_data = data;
+  }
+
+  // either returns the named string, or throws an error if it doesn't exist or isn't compatible with a string
+  GetString(strName: string): string {
+    if (typeof this.internal_data[strName] !== "string") {
+      throw new Error(`${strName} is not a string`);
+    }
+    if (this.internal_data[strName].length === 0) {
+      throw new Error(`${strName} is does not exist`);
+    }
+    return this.internal_data[strName]; // guareteed to be a string
+  }
+
+  // either returns the named string, or throws an error if it doesn't exist or isn't compatible with a string
+  GetNumber(strName: string): number {
+    if (typeof this.internal_data[strName] !== "number") {
+      throw new Error(`${strName} is not a number`);
+    }
+    if (this.internal_data[strName].length === 0) {
+      throw new Error(`${strName} is does not exist`);
+    }
+    return this.internal_data[strName]; // guareteed to be a number
+  }
+}
+
+/**
+ * decode whole numbers from protobuf-style varint bytes
+ * // adapted from: https://github.com/chrisdickinson/varint/blob/master/decode.js
+ * @param varIntBytes - raw binary schemer-encoded data
+ * @returns decoded raw int
+ * @throws RangeError if varint cannot be decoded from the provided bytes
+ */
+function doVarIntDecode(varIntBytes: Uint8Array): number {
+  const MSB = 0x80;
+  const REST = 0x7f;
+
+  let res = 0,
     shift = 0,
-    counter = offset,
-    b,
-    l = buf.length;
+    counter = 0,
+    b = 0;
 
   do {
-    if (counter >= l || shift > 49) {
-      //read.bytes = 0;
+    if (counter >= varIntBytes.length || shift > 49) {
       throw new RangeError("Could not decode varint");
     }
-    b = buf[counter++];
+    b = varIntBytes[counter++];
     res += shift < 28 ? (b & REST) << shift : (b & REST) * Math.pow(2, shift);
     shift += 7;
   } while (b >= MSB);
 
-  lastVarIntSize = counter - offset;
+  // set global variable indicating how many bytes were used to decode the varint
+  lastVarIntSize = counter;
 
   return res;
 }
 
-function decodeVarInt(binaryData : Uint8Array, JSONschema:any) {
+/**
+ * decoded varint
+ * @param binaryData - raw binary schemer-encoded data
+ * @param JSONschema - schemer schema defining the data, in JSON format
+ * @throws error if invalid schema
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function decodeVarInt(binaryData: Uint8Array, JSONschema: any): number {
   if (JSONschema.type != "int") throw new Error("invalid schema");
 
-  let excerpt = binaryData.subarray(offset);
+  const excerpt = binaryData.subarray(offset);
 
   // process and return an integer, decoded from an encoded varint
   // if the schema indicates it is a signed value, convert it
   // to a signed value (because we always encode unsigned ints)
-  let uint = doVarIntDecode(excerpt, 0);
+  const uint = doVarIntDecode(excerpt);
+
   offset += lastVarIntSize;
 
-  let unsigned = !(JSONschema.signed == "true");
+  const unsigned = !(JSONschema.signed == "true");
   if (unsigned) return uint;
 
   // otherwise, convert into a signed int
@@ -60,95 +103,126 @@ function decodeVarInt(binaryData : Uint8Array, JSONschema:any) {
   return intVal;
 }
 
-function decodeFixedString(binaryData : Uint8Array,  JSONschema:any) {
+/**
+ * decodes a fixed length string
+ * @param binaryData - raw binary schemer-encoded data
+ * @param JSONschema - schemer schema defining the data, in JSON format
+ * @throws error if invalid schema
+ */
+export function decodeFixedString(
+  binaryData: Uint8Array,
+  JSONschema: any
+): string {
   if (JSONschema.type != "string") throw new Error("invalid schema");
 
   let excerpt = binaryData.subarray(offset);
 
   // first byte tells the length of the byte, in bytes
   // figure out the length of the string
-  let n = doVarIntDecode(excerpt,0);
+  const n = doVarIntDecode(excerpt);
   offset += lastVarIntSize;
 
   // create an excerpt of the binary data that is exactly n bytes long
   excerpt = binaryData.subarray(offset, offset + n);
-  let strValue = new TextDecoder("utf-8").decode(excerpt);
+  const strValue = new TextDecoder("utf-8").decode(excerpt);
 
   // increate offset by length of the string
   offset += n;
   return strValue;
 }
 
-// decode floating point value from binary data
-function decodeFloat32(binaryData : Uint8Array, JSONschema:any) {
-  if (JSONschema.type != "float") throw new Error("invalid schema; float expected");
-  let excerpt = binaryData.subarray(offset, offset + 4);
+/**
+ * decodes a float32 from schemer binary data
+ * @param binaryData - raw binary schemer-encoded data
+ * @param JSONschema - schemer schema defining the data, in JSON format
+ * @throws error if invalid schema
+ */
+// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+export function decodeFloat32(binaryData: Uint8Array, JSONschema: any): number {
+  if (JSONschema.type != "float")
+    throw new Error("invalid schema; float expected");
+  const excerpt = binaryData.subarray(offset, offset + 4);
   offset += 4;
-  let rawData = new Uint8Array(excerpt);
+  const rawData = new Uint8Array(excerpt);
   const view = new DataView(rawData.buffer);
   return view.getFloat32(0, true);
 }
 
-// decode floating point value from binary data
-function decodeFloat64(binaryData: Uint8Array, JSONschema:any) {
-  if (JSONschema.type != "float") throw new Error("invalid schema; float expected");
-  let excerpt = binaryData.subarray(offset, offset + 8);
+/**
+ * decodes a float64 from schemer binary data
+ * @param binaryData - raw binary schemer-encoded data
+ * @param JSONschema - schemer schema defining the data, in JSON format
+ * @throws error if invalid schema
+ */
+export function decodeFloat64(binaryData: Uint8Array, JSONschema: any): number {
+  if (JSONschema.type != "float")
+    throw new Error("invalid schema; float expected");
+  const excerpt = binaryData.subarray(offset, offset + 8);
   offset += 8;
-  let rawData = new Uint8Array(excerpt);
+  const rawData = new Uint8Array(excerpt);
   const view = new DataView(rawData.buffer);
   return view.getFloat64(0, true);
 }
 
-// returns an object populated with the schemer binary data.
-// the passed in schema (which must be in JSON format) is used
-// to decode the binary data.
-function decodFixedObject(binaryData: Uint8Array, JSONschema:any) {
-  let retVal = {};
-
-  console.log(JSONschema);
+/**
+ * decodes a fixed object from schemer binary data
+ * @param binaryData - raw binary schemer-encoded data
+ * @param JSONschema - schemer schema defining the data, in JSON format
+ * @returns SchemerDecoder - used to get type safe version of the decoded data
+ * @throws error if invalid schema
+ */
+export function decodFixedObject(
+  binaryData: Uint8Array,
+  JSONschema: Record<string, any>
+): SchemerDecoder {
+  const workingValues: Record<string, any> = {};
 
   // loop through the schema, and decode each value
   for (let i = 0; i < JSONschema.fields.length; i++) {
-    let fieldName = JSONschema.fields[i].name;
+    const fieldName: string = JSONschema.fields[i].name;
+    const field: any = JSONschema.fields[i];
 
-    if (JSONschema.fields[i].type == "string") {
-      retVal[fieldName] = decodeFixedString(binaryData, JSONschema.fields[i]);
+    switch (field.type) {
+      case "string":
+        workingValues[fieldName] = decodeFixedString(
+          binaryData,
+          JSONschema.fields[i]
+        );
+        break;
+
+      case "int":
+        workingValues[fieldName] = decodeVarInt(binaryData, field);
+        break;
+
+      case "float":
+        if (field.bits == "32") {
+          workingValues[fieldName] = decodeFloat32(binaryData, field);
+        } else if (field.bits == "64") {
+          workingValues[fieldName] = decodeFloat64(binaryData, field);
+        } else {
+          throw new Error("invalid schema; invalid floating point size");
+        }
+        break;
     }
 
-    if (JSONschema.fields[i].type == "int") {
-      retVal[fieldName] = decodeVarInt(binaryData, JSONschema.fields[i]);
-    }
-
-    if (JSONschema.fields[i].type == "float") {
-      if (JSONschema.fields[i].bits == "32") {
-        retVal[fieldName] = decodeFloat32(binaryData, JSONschema.fields[i]);
-      } else if (JSONschema.fields[i].bits == "64") {
-        retVal[fieldName] = decodeFloat64(binaryData, JSONschema.fields[i]);
+    if (field.type == "float") {
+      if (field.bits == "32") {
+        workingValues[fieldName] = decodeFloat32(binaryData, field);
+      } else if (field.bits == "64") {
+        workingValues[fieldName] = decodeFloat64(binaryData, field);
       } else {
-        console.log("invalid floating point bit size encountered");
+        throw new Error("invalid schema; invalid floating point size");
       }
     }
   }
 
-  return retVal;
+  return new SchemerDecoder(workingValues);
 }
 
 // for the moment, we can ONLY decode fixed objects...
-function schemerDecode(binaryData, JSONschema:any) {
-  // FIXME
+export function schemerDecode(
+  binaryData: Uint8Array,
+  JSONschema: Record<string, any>
+): SchemerDecoder {
   return decodFixedObject(binaryData, JSONschema);
-}
-
-export function fetchAndDecode() {
-  fetch("http://localhost:8080/get-schema/")
-    .then((res) => res.json())
-    .then((json) => {
-      fetch("http://localhost:8080/get-data/")
-        .then((res) => res.arrayBuffer())
-        .then((buffer) => {
-          let rawData = new Uint8Array(buffer);
-          let obj = schemerDecode(json, rawData);
-          console.log(obj);
-        });
-    });
 }

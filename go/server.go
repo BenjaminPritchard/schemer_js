@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -13,25 +13,35 @@ import (
 const DefaultPort = "8080"
 
 type sourceStruct struct {
-	//FirstName string
-	//LastName  string
-	Age float64
+	FirstName string
+	LastName  string
+	Age       int
+	Float1    float32
+	Float2    float64
+	Bool1     bool
+	Complex1  complex64
+	Complex2  complex64
 }
 
 var structToEncode = sourceStruct{}
 var writerSchema = schemer.SchemaOf(&structToEncode)
-var binaryWriterSchema, _ = writerSchema.MarshalJSON()
 
 var mu sync.Mutex
 
 // for right this monent, just hard code some data
-func asyncUpdate() {
+func populateStruct() {
 	mu.Lock()
 	defer mu.Unlock()
 
-	//structToEncode.FirstName = "ben"
-	//structToEncode.LastName = "pritchard"
-	structToEncode.Age = 3.14156
+	structToEncode.FirstName = "ben"
+	structToEncode.LastName = "pritchard"
+	structToEncode.Age = 42
+
+	structToEncode.Float1 = 3.14159
+	structToEncode.Float2 = 2.81828
+	structToEncode.Bool1 = true
+	structToEncode.Complex1 = 1 + 2i
+	structToEncode.Complex2 = 3 + 4i
 }
 
 func getSchemaHanlder() http.HandlerFunc {
@@ -42,11 +52,11 @@ func getSchemaHanlder() http.HandlerFunc {
 			return
 		}
 
-		//origin := req.Header.Get("Origin")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		b, _ := writerSchema.MarshalJSON()
+		fmt.Println(string(b))
 
-		buf := bytes.NewBuffer(binaryWriterSchema)
-		_, err := w.Write(buf.Bytes())
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		_, err := w.Write(b)
 
 		if err != nil {
 			http.Error(w, "internal error: "+err.Error(), http.StatusInternalServerError)
@@ -67,24 +77,11 @@ func getDataHanlder() http.HandlerFunc {
 		}
 
 		mu.Lock()
+		defer mu.Unlock()
 
-		var encodedData bytes.Buffer
-		err := writerSchema.Encode(&encodedData, structToEncode)
+		err := writerSchema.Encode(w, structToEncode)
 		if err != nil {
 			http.Error(w, "internal error: "+err.Error(), http.StatusInternalServerError)
-			defer mu.Unlock()
-			return
-		}
-
-		mu.Unlock()
-
-		_, err = w.Write(encodedData.Bytes())
-		log.Print(encodedData.Bytes())
-		//log.Printf("%d bytes written ", n)
-
-		if err != nil {
-			http.Error(w, "internal error: "+err.Error(), http.StatusInternalServerError)
-			log.Println("i/o error: " + err.Error())
 			return
 		}
 
@@ -98,8 +95,7 @@ func main() {
 		port = DefaultPort
 	}
 
-	// constantly write out new data
-	go asyncUpdate()
+	populateStruct()
 
 	// setup our endpoints
 	mux := http.NewServeMux()
