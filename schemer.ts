@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/explicit-module-boundary-types */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+//
+// TypeScript Version: 3.1
 // schemer.ts - typescript schemer decoder
 // this code is setup for run under node.js
 // currently it includes the functionality to both:
@@ -7,6 +9,7 @@
 //    2) actually decode the data
 // in the future, we want the decoding logic to be broken out
 // into an isomorphic library for use in both NODE and on the browser somehow
+// Benjamin Pritchard / iCompute Consulting
 
 "use strict";
 
@@ -27,20 +30,42 @@ export class SchemerDecoder {
       throw new Error(`${strName} is not a string`);
     }
     if (this.internal_data[strName].length === 0) {
-      throw new Error(`${strName} is does not exist`);
+      throw new Error(`${strName} does not exist`);
     }
-    return this.internal_data[strName]; // guareteed to be a string
+    return this.internal_data[strName]; // guaranteed to be a string
   }
 
-  // either returns the named string, or throws an error if it doesn't exist or isn't compatible with a string
+  // either returns the named string, or throws an error if it doesn't exist or isn't compatible with a number
   GetNumber(strName: string): number {
     if (typeof this.internal_data[strName] !== "number") {
       throw new Error(`${strName} is not a number`);
     }
     if (this.internal_data[strName].length === 0) {
-      throw new Error(`${strName} is does not exist`);
+      throw new Error(`${strName} does not exist`);
     }
-    return this.internal_data[strName]; // guareteed to be a number
+    return this.internal_data[strName]; // guaranteed to be a number
+  }
+
+  // either returns the named string, or throws an error if it doesn't exist or isn't compatible with a boolean
+  GetBool(strName: string): boolean {
+    if (typeof this.internal_data[strName] !== "boolean") {
+      throw new Error(`${strName} is not a boolean`);
+    }
+    if (this.internal_data[strName].length === 0) {
+      throw new Error(`${strName} does not exist`);
+    }
+    return this.internal_data[strName]; // guaranteed to be a boolean
+  }
+
+  // either returns the named string, or throws an error if it doesn't exist or isn't compatible with an object
+  GetObject(strName: string): SchemerDecoder {
+    if (typeof this.internal_data[strName] !== "object") {
+      throw new Error(`${strName} is not a object`);
+    }
+    if (this.internal_data[strName].length === 0) {
+      throw new Error(`${strName} does not exist`);
+    }
+    return this.internal_data[strName]; // guaranteed to be an object
   }
 }
 
@@ -76,9 +101,10 @@ function doVarIntDecode(varIntBytes: Uint8Array): number {
 }
 
 /**
- * decoded varint
+ * decode varint
  * @param binaryData - raw binary schemer-encoded data
  * @param JSONschema - schemer schema defining the data, in JSON format
+ * @returns decoded varint as a number
  * @throws error if invalid schema
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -94,8 +120,8 @@ export function decodeVarInt(binaryData: Uint8Array, JSONschema: any): number {
 
   offset += lastVarIntSize;
 
-  const unsigned = !(JSONschema.signed == "true");
-  if (unsigned) return uint;
+  const signed = JSONschema.signed == "true";
+  if (signed) return uint;
 
   // otherwise, convert into a signed int
   let intVal = uint >> 1;
@@ -107,6 +133,7 @@ export function decodeVarInt(binaryData: Uint8Array, JSONschema: any): number {
  * decodes a fixed length string
  * @param binaryData - raw binary schemer-encoded data
  * @param JSONschema - schemer schema defining the data, in JSON format
+ * @returns decoded string as a string
  * @throws error if invalid schema
  */
 export function decodeFixedString(
@@ -135,6 +162,7 @@ export function decodeFixedString(
  * decodes a float32 from schemer binary data
  * @param binaryData - raw binary schemer-encoded data
  * @param JSONschema - schemer schema defining the data, in JSON format
+ * @returns decoded float32 as a number
  * @throws error if invalid schema
  */
 // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
@@ -152,6 +180,7 @@ export function decodeFloat32(binaryData: Uint8Array, JSONschema: any): number {
  * decodes a float64 from schemer binary data
  * @param binaryData - raw binary schemer-encoded data
  * @param JSONschema - schemer schema defining the data, in JSON format
+ * @returns decoded float64 as a number
  * @throws error if invalid schema
  */
 export function decodeFloat64(binaryData: Uint8Array, JSONschema: any): number {
@@ -165,6 +194,41 @@ export function decodeFloat64(binaryData: Uint8Array, JSONschema: any): number {
 }
 
 /**
+ * decodes a boolean from schemer binary data
+ * @param binaryData - raw binary schemer-encoded data
+ * @param JSONschema - schemer schema defining the data, in JSON format
+ * @returns decoded boolean as a boolean
+ * @throws error if invalid schema
+ */
+export function decodeBool(binaryData: Uint8Array, JSONschema: any): boolean {
+  if (JSONschema.type != "bool")
+    throw new Error("invalid schema; bool expected");
+  const retval = binaryData[offset] != 0;
+  offset += 1;
+  return retval;
+}
+
+/**
+ * decodes a complex64 from schemer binary data
+ * @param binaryData - raw binary schemer-encoded data
+ * @param JSONschema - schemer schema defining the data, in JSON format
+ * @returns decoded complex64 as a number
+ * @throws error if invalid schema
+ */
+export function decodeComplex64(
+  binaryData: Uint8Array,
+  JSONschema: any
+): number {
+  if (JSONschema.type != "complex")
+    throw new Error("invalid schema; bool expected");
+    const excerpt = binaryData.subarray(offset, offset + 8);
+    offset += 8;
+    const rawData = new Uint8Array(excerpt);
+    const view = new DataView(rawData.buffer);
+    return view.G(0, true);
+}
+
+/**
  * decodes a fixed object from schemer binary data
  * @param binaryData - raw binary schemer-encoded data
  * @param JSONschema - schemer schema defining the data, in JSON format
@@ -174,7 +238,7 @@ export function decodeFloat64(binaryData: Uint8Array, JSONschema: any): number {
 export function decodFixedObject(
   binaryData: Uint8Array,
   JSONschema: Record<string, any>
-): SchemerDecoder {
+): Record<string, any> {
   const workingValues: Record<string, any> = {};
 
   // loop through the schema, and decode each value
@@ -203,20 +267,18 @@ export function decodFixedObject(
           throw new Error("invalid schema; invalid floating point size");
         }
         break;
-    }
 
-    if (field.type == "float") {
-      if (field.bits == "32") {
-        workingValues[fieldName] = decodeFloat32(binaryData, field);
-      } else if (field.bits == "64") {
-        workingValues[fieldName] = decodeFloat64(binaryData, field);
-      } else {
-        throw new Error("invalid schema; invalid floating point size");
-      }
+      case "bool":
+        workingValues[fieldName] = decodeBool(binaryData, field);
+        break;
+
+      default:
+        console.log(`warning: skipped unsupported schema type ${field.type}`);
+        break;
     }
   }
 
-  return new SchemerDecoder(workingValues);
+  return workingValues;
 }
 
 // for the moment, we can ONLY decode fixed objects...
@@ -224,5 +286,5 @@ export function schemerDecode(
   binaryData: Uint8Array,
   JSONschema: Record<string, any>
 ): SchemerDecoder {
-  return decodFixedObject(binaryData, JSONschema);
+  return new SchemerDecoder(decodFixedObject(binaryData, JSONschema));
 }

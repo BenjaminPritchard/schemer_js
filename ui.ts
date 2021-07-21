@@ -9,8 +9,25 @@ class typedDecodedData {
   FirstName: string;
   LastName: string;
   Age: number;
+  IsMarried: boolean;
   Float1: number;
   Float2: number;
+  Complex1: number;
+  Complex2: number;
+}
+
+const decodedData = new typedDecodedData();
+
+function populateTypedData(schemaDecoder: schemer.SchemerDecoder) {
+  // populate the typed struct with the decoded data, ensuring type safety
+  decodedData.FirstName = schemaDecoder.GetString("FirstName");
+  decodedData.LastName = schemaDecoder.GetString("LastName");
+  decodedData.Age = schemaDecoder.GetNumber("Age");
+  decodedData.IsMarried = schemaDecoder.GetBool("Bool1");
+  decodedData.Float1 = schemaDecoder.GetNumber("Float1");
+  decodedData.Float2 = schemaDecoder.GetNumber("Float2");
+
+  console.log(decodedData);
 }
 
 // grab schema from server
@@ -22,15 +39,10 @@ function fetchAndDecode() {
       fetch(dataURL)
         .then((res) => res.arrayBuffer())
         .then((buffer) => {
+          console.log(json);
           const rawData = new Uint8Array(buffer);
           const schemaDecoder = schemer.schemerDecode(rawData, json);
-
-          const decodedData = new typedDecodedData();
-          decodedData.FirstName = schemaDecoder.GetString("FirstName");
-          decodedData.LastName = schemaDecoder.GetString("LastName");
-          decodedData.Age = schemaDecoder.GetNumber("Age");
-
-          console.log(decodedData);
+          populateTypedData(schemaDecoder);
         });
     });
 }

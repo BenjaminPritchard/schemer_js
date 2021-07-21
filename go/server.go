@@ -1,17 +1,13 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"sync"
-
-	"github.com/bminer/schemer"
 )
 
-const DefaultPort = "8080"
-
+// application-specific data
 type sourceStruct struct {
 	FirstName string
 	LastName  string
@@ -20,91 +16,54 @@ type sourceStruct struct {
 	Float2    float64
 	Bool1     bool
 	Complex1  complex64
-	Complex2  complex64
+	Complex2  complex128
 }
 
-var structToEncode = sourceStruct{}
-var writerSchema = schemer.SchemaOf(&structToEncode)
-
-var mu sync.Mutex
-
-// for right this monent, just hard code some data
-func populateStruct() {
-	mu.Lock()
-	defer mu.Unlock()
-
-	structToEncode.FirstName = "ben"
-	structToEncode.LastName = "pritchard"
-	structToEncode.Age = 42
-
-	structToEncode.Float1 = 3.14159
-	structToEncode.Float2 = 2.81828
-	structToEncode.Bool1 = true
-	structToEncode.Complex1 = 1 + 2i
-	structToEncode.Complex2 = 3 + 4i
+func (d *sourceStruct) GetData() interface{} {
+	return d
 }
 
-func getSchemaHanlder() http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
+// application-specific way to aquire data
+func populateStruct(mu *sync.Mutex, structToEncode *sourceStruct) {
 
-		if req.Method != http.MethodGet {
-			http.Error(w, "Invalid Invocation", http.StatusNotFound)
-			return
-		}
+	counter := 0
 
-		b, _ := writerSchema.MarshalJSON()
-		fmt.Println(string(b))
-
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		_, err := w.Write(b)
-
-		if err != nil {
-			http.Error(w, "internal error: "+err.Error(), http.StatusInternalServerError)
-			log.Println("i/o error: " + err.Error())
-			return
-		}
-
-		log.Printf("successfully returned binary schema")
-	}
-}
-
-func getDataHanlder() http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
-
-		if req.Method != http.MethodGet {
-			http.Error(w, "Invalid Invocation", http.StatusNotFound)
-			return
-		}
-
+	// in this example, we just populate with pretend data...
+	for {
 		mu.Lock()
-		defer mu.Unlock()
 
-		err := writerSchema.Encode(w, structToEncode)
-		if err != nil {
-			http.Error(w, "internal error: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
+		structToEncode.FirstName = "ben"
+		structToEncode.LastName = "pritchard"
+		structToEncode.Age = 42 + counter // goes to show: i'm not getting any younger!
 
-		log.Printf("successfully returned binary data")
+		structToEncode.Float1 = 3.14159
+		structToEncode.Float2 = 2.81828
+		structToEncode.Bool1 = true
+		structToEncode.Complex1 = 1 + 2i
+		structToEncode.Complex2 = 3 + 4i
+
+		counter++
+		mu.Unlock()
 	}
 }
 
 func main() {
+	const DefaultPort = "8080"
+
+	mu := new(sync.Mutex)
+	structToEncode := sourceStruct{}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = DefaultPort
 	}
 
-	populateStruct()
+	// populate our struct asyncronously
+	go populateStruct(mu, &structToEncode)
 
-	// setup our endpoints
-	mux := http.NewServeMux()
-	mux.HandleFunc("/get-schema/", getSchemaHanlder())
-	mux.HandleFunc("/get-data/", getDataHanlder())
+	// create the pointpoints for our struct
+	mux := SchemerHandlerFor(&structToEncode, port, mu)
 
-	log.Println("example server listing on port:", port)
-	log.Println("endpont 1: /get-schema/")
-	log.Println("endpont 2: /get-data/")
-
+	// and server it
 	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
