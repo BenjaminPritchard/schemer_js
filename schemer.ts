@@ -13,18 +13,40 @@
 
 "use strict";
 
-let offset = 0;
+let offset = 0; // used to current offset into
 let lastVarIntSize = 0;
+
+export class ComplexNumber {
+  public real: number;
+  public imag: number;
+
+  constructor(real: number, imag: number) {
+    this.real = real;
+    this.imag = imag;
+  }
+
+  ValueAsString() {
+    return " `${this.real} + ${this.imag}i`";
+  }
+}
 
 // typesafe way to get "any" data into expected types
 export class SchemerDecoder {
   private internal_data: Record<string, any>;
+  private JSONSchema: any;
 
-  constructor(data: Record<string, any>) {
+  constructor(data: Record<string, any>, JSONSchema: any) {
+    // internal data can be used to get a javascript object mapping field names to fields of type any
+    // if using a typescript JSON decoder typesafe library, just pass this in as the "JSON" data.
     this.internal_data = data;
+    // JSONSchema is the schema associated with this decoder
+    this.JSONSchema = JSONSchema;
   }
 
-  // either returns the named string, or throws an error if it doesn't exist or isn't compatible with a string
+  // if using this library from vanilla javascript, use the functions below to
+  // return the decoded data in a typesafe way the best we can
+
+  // either returns the named field, or throws an error if it doesn't exist or isn't compatible with a string
   GetString(strName: string): string {
     if (typeof this.internal_data[strName] !== "string") {
       throw new Error(`${strName} is not a string`);
@@ -35,7 +57,7 @@ export class SchemerDecoder {
     return this.internal_data[strName]; // guaranteed to be a string
   }
 
-  // either returns the named string, or throws an error if it doesn't exist or isn't compatible with a number
+  // either returns the named field, or throws an error if it doesn't exist or isn't compatible with a number
   GetNumber(strName: string): number {
     if (typeof this.internal_data[strName] !== "number") {
       throw new Error(`${strName} is not a number`);
@@ -46,7 +68,7 @@ export class SchemerDecoder {
     return this.internal_data[strName]; // guaranteed to be a number
   }
 
-  // either returns the named string, or throws an error if it doesn't exist or isn't compatible with a boolean
+  // either returns the named field, or throws an error if it doesn't exist or isn't compatible with a boolean
   GetBool(strName: string): boolean {
     if (typeof this.internal_data[strName] !== "boolean") {
       throw new Error(`${strName} is not a boolean`);
@@ -57,7 +79,7 @@ export class SchemerDecoder {
     return this.internal_data[strName]; // guaranteed to be a boolean
   }
 
-  // either returns the named string, or throws an error if it doesn't exist or isn't compatible with an object
+  // either returns the named field, or throws an error if it doesn't exist or isn't compatible with an object
   GetObject(strName: string): SchemerDecoder {
     if (typeof this.internal_data[strName] !== "object") {
       throw new Error(`${strName} is not a object`);
@@ -66,6 +88,34 @@ export class SchemerDecoder {
       throw new Error(`${strName} does not exist`);
     }
     return this.internal_data[strName]; // guaranteed to be an object
+  }
+
+  // either returns the named field, or throws an error if it doesn't exist or isn't compatible with a ComplexNumber
+  GetComplex(strName: string): ComplexNumber {
+    if (
+      typeof this.internal_data[strName] !== "object" ||
+      this.internal_data[strName].constructor.name != "ComplexNumber"
+    ) {
+      throw new Error(`${strName} is not a ComplexNumber`);
+    }
+    if (this.internal_data[strName].length === 0) {
+      throw new Error(`${strName} does not exist`);
+    }
+    return this.internal_data[strName]; // guaranteed to be a ComplexNumber
+  }
+
+  // either returns the named field, or throws an error if it doesn't exist or isn't compatible with an array
+  GetArray(strName: string): any[] {
+    if (
+      typeof this.internal_data[strName] !== "object" ||
+      this.internal_data[strName].constructor.name != "Array"
+    ) {
+      throw new Error(`${strName} is not an array`);
+    }
+    if (this.internal_data[strName].length === 0) {
+      throw new Error(`${strName} does not exist`);
+    }
+    return this.internal_data[strName]; // guaranteed to be an array (of type any)
   }
 }
 
@@ -108,8 +158,8 @@ function doVarIntDecode(varIntBytes: Uint8Array): number {
  * @throws error if invalid schema
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function decodeVarInt(binaryData: Uint8Array, JSONschema: any): number {
-  if (JSONschema.type != "int") throw new Error("invalid schema");
+function decodeVarInt(binaryData: Uint8Array, JSONschema: any): number {
+  //if (JSONschema.type != "int") throw new Error("invalid schema");
 
   const excerpt = binaryData.subarray(offset);
 
@@ -117,7 +167,6 @@ export function decodeVarInt(binaryData: Uint8Array, JSONschema: any): number {
   // if the schema indicates it is a signed value, convert it
   // to a signed value (because we always encode unsigned ints)
   const uint = doVarIntDecode(excerpt);
-
   offset += lastVarIntSize;
 
   const signed = JSONschema.signed == "true";
@@ -136,18 +185,14 @@ export function decodeVarInt(binaryData: Uint8Array, JSONschema: any): number {
  * @returns decoded string as a string
  * @throws error if invalid schema
  */
-export function decodeFixedString(
-  binaryData: Uint8Array,
-  JSONschema: any
-): string {
+function decodeFixedString(binaryData: Uint8Array, JSONschema: any): string {
   if (JSONschema.type != "string") throw new Error("invalid schema");
 
   let excerpt = binaryData.subarray(offset);
 
   // first byte tells the length of the byte, in bytes
   // figure out the length of the string
-  const n = doVarIntDecode(excerpt);
-  offset += lastVarIntSize;
+  const n = decodeVarInt(excerpt, JSONschema);
 
   // create an excerpt of the binary data that is exactly n bytes long
   excerpt = binaryData.subarray(offset, offset + n);
@@ -162,12 +207,16 @@ export function decodeFixedString(
  * decodes a float32 from schemer binary data
  * @param binaryData - raw binary schemer-encoded data
  * @param JSONschema - schemer schema defining the data, in JSON format
+ * @param overRideSchema - boolean indicating whether or not to override the schema (to allow for use during complex number decoding)
  * @returns decoded float32 as a number
  * @throws error if invalid schema
  */
-// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-export function decodeFloat32(binaryData: Uint8Array, JSONschema: any): number {
-  if (JSONschema.type != "float")
+function decodeFloat32(
+  binaryData: Uint8Array,
+  JSONschema: any,
+  overRideSchema?: boolean
+): number {
+  if (JSONschema.type != "float" && overRideSchema !== true)
     throw new Error("invalid schema; float expected");
   const excerpt = binaryData.subarray(offset, offset + 4);
   offset += 4;
@@ -180,11 +229,16 @@ export function decodeFloat32(binaryData: Uint8Array, JSONschema: any): number {
  * decodes a float64 from schemer binary data
  * @param binaryData - raw binary schemer-encoded data
  * @param JSONschema - schemer schema defining the data, in JSON format
+ * @param overRideSchema - boolean indicating whether or not to override the schema (to allow for use during complex number decoding)
  * @returns decoded float64 as a number
  * @throws error if invalid schema
  */
-export function decodeFloat64(binaryData: Uint8Array, JSONschema: any): number {
-  if (JSONschema.type != "float")
+function decodeFloat64(
+  binaryData: Uint8Array,
+  JSONschema: any,
+  overRideSchema?: boolean
+): number {
+  if (JSONschema.type != "float" && overRideSchema !== true)
     throw new Error("invalid schema; float expected");
   const excerpt = binaryData.subarray(offset, offset + 8);
   offset += 8;
@@ -200,7 +254,7 @@ export function decodeFloat64(binaryData: Uint8Array, JSONschema: any): number {
  * @returns decoded boolean as a boolean
  * @throws error if invalid schema
  */
-export function decodeBool(binaryData: Uint8Array, JSONschema: any): boolean {
+function decodeBool(binaryData: Uint8Array, JSONschema: any): boolean {
   if (JSONschema.type != "bool")
     throw new Error("invalid schema; bool expected");
   const retval = binaryData[offset] != 0;
@@ -212,20 +266,89 @@ export function decodeBool(binaryData: Uint8Array, JSONschema: any): boolean {
  * decodes a complex64 from schemer binary data
  * @param binaryData - raw binary schemer-encoded data
  * @param JSONschema - schemer schema defining the data, in JSON format
- * @returns decoded complex64 as a number
+ * @returns decoded complex64 as a ComplexNumber
  * @throws error if invalid schema
  */
-export function decodeComplex64(
+function decodeComplex64(
   binaryData: Uint8Array,
   JSONschema: any
-): number {
+): ComplexNumber {
   if (JSONschema.type != "complex")
-    throw new Error("invalid schema; bool expected");
-    const excerpt = binaryData.subarray(offset, offset + 8);
-    offset += 8;
-    const rawData = new Uint8Array(excerpt);
-    const view = new DataView(rawData.buffer);
-    return view.G(0, true);
+    throw new Error("invalid schema; complex expected");
+  const realPart = decodeFloat32(binaryData, JSONschema, true);
+  const imaginaryPart = decodeFloat32(binaryData, JSONschema, true);
+  return new ComplexNumber(realPart, imaginaryPart);
+}
+
+/**
+ * decodes a complex128 from schemer binary data
+ * @param binaryData - raw binary schemer-encoded data
+ * @param JSONschema - schemer schema defining the data, in JSON format
+ * @returns decoded complex64 as a ComplexNumber
+ * @throws error if invalid schema
+ */
+function decodeComplex128(
+  binaryData: Uint8Array,
+  JSONschema: any
+): ComplexNumber {
+  if (JSONschema.type != "complex")
+    throw new Error("invalid schema; complex expected");
+  const realPart = decodeFloat64(binaryData, JSONschema, true);
+  const imaginaryPart = decodeFloat64(binaryData, JSONschema, true);
+  return new ComplexNumber(realPart, imaginaryPart);
+}
+
+/**
+ * decodes a complex128 from schemer binary data
+ * @param binaryData - raw binary schemer-encoded data
+ * @param JSONschema - schemer schema defining the data, in JSON format
+ * @returns decoded complex64 as a ComplexNumber
+ * @throws error if invalid schema
+ */
+// NOTE: typesafety is lost here...
+function decodeVarArray(binaryData: Uint8Array, JSONschema: any): any[] {
+  if (JSONschema.type != "array")
+    throw new Error("invalid schema; complex expected");
+  if (JSONschema.length != undefined)
+    throw new Error(
+      "invalid schema; varArray schemas cannot have a length element"
+    );
+  const arraySize = decodeVarInt(binaryData, JSONschema);
+  const array = new Array(arraySize);
+
+  const fieldName =
+    JSONschema.element.type == "object" ? JSONschema.element.name : "value";
+
+  for (let i = 0; i < arraySize; i++) {
+    const schemerDecoder = schemerDecode(binaryData, JSONschema.element);
+
+    switch (JSONschema.element.type) {
+      case "string":
+        array[i] = schemerDecoder.GetString(fieldName);
+        break;
+
+      case "int":
+        array[i] = schemerDecoder.GetNumber(fieldName);
+        break;
+
+      case "bool":
+        array[i] = schemerDecoder.GetBool(fieldName);
+        break;
+
+      case "object":
+        array[i] = schemerDecoder.GetObject(fieldName);
+        break;
+
+      case "complex":
+        array[i] = schemerDecoder.GetComplex(fieldName);
+        break;
+
+      case "array":
+        array[i] = schemerDecoder.GetArray(fieldName);
+    }
+  }
+
+  return array;
 }
 
 /**
@@ -235,7 +358,7 @@ export function decodeComplex64(
  * @returns SchemerDecoder - used to get type safe version of the decoded data
  * @throws error if invalid schema
  */
-export function decodFixedObject(
+function decodFixedObject(
   binaryData: Uint8Array,
   JSONschema: Record<string, any>
 ): Record<string, any> {
@@ -245,6 +368,7 @@ export function decodFixedObject(
   for (let i = 0; i < JSONschema.fields.length; i++) {
     const fieldName: string = JSONschema.fields[i].name;
     const field: any = JSONschema.fields[i];
+    const arrayType = "int";
 
     switch (field.type) {
       case "string":
@@ -252,6 +376,17 @@ export function decodFixedObject(
           binaryData,
           JSONschema.fields[i]
         );
+        break;
+
+      case "array":
+        switch (arrayType) {
+          case "int":
+            workingValues[fieldName] = decodeVarArray(
+              binaryData,
+              JSONschema.fields[i]
+            );
+            break;
+        }
         break;
 
       case "int":
@@ -272,6 +407,16 @@ export function decodFixedObject(
         workingValues[fieldName] = decodeBool(binaryData, field);
         break;
 
+      case "complex":
+        if (field.bits == "64") {
+          workingValues[fieldName] = decodeComplex64(binaryData, field);
+        } else if (field.bits == "128") {
+          workingValues[fieldName] = decodeComplex128(binaryData, field);
+        } else {
+          throw new Error("invalid schema; invalid complex size");
+        }
+        break;
+
       default:
         console.log(`warning: skipped unsupported schema type ${field.type}`);
         break;
@@ -281,10 +426,73 @@ export function decodFixedObject(
   return workingValues;
 }
 
-// for the moment, we can ONLY decode fixed objects...
+/**
+ * decodes a value schemer binary data
+ * @param binaryData - raw binary schemer-encoded data
+ * @param JSONschema - schemer schema defining the data, in JSON format
+ * @returns SchemerDecoder - used to get type safe version of the decoded data
+ */
 export function schemerDecode(
   binaryData: Uint8Array,
   JSONschema: Record<string, any>
 ): SchemerDecoder {
-  return new SchemerDecoder(decodFixedObject(binaryData, JSONschema));
+  const workingValues: Record<string, any> = {};
+
+  switch (JSONschema.type) {
+    case "object":
+      return new SchemerDecoder(
+        decodFixedObject(binaryData, JSONschema),
+        JSONschema
+      );
+      break;
+
+    case "string":
+      workingValues["value"] = decodeFixedString(binaryData, JSONschema);
+      break;
+
+    case "int":
+      workingValues["value"] = decodeVarInt(binaryData, JSONschema);
+      break;
+
+    case "float":
+      if (JSONschema.bits == "32") {
+        workingValues["value"] = decodeFloat32(binaryData, JSONschema);
+      } else if (JSONschema.bits == "64") {
+        workingValues["value"] = decodeFloat64(binaryData, JSONschema);
+      } else {
+        throw new Error("invalid schema; invalid floating point size");
+      }
+      break;
+
+    case "bool":
+      workingValues["value"] = decodeBool(binaryData, JSONschema);
+      break;
+
+    case "complex":
+      if (JSONschema.bits == "64") {
+        workingValues["value"] = decodeComplex64(binaryData, JSONschema);
+      } else if (JSONschema.bits == "128") {
+        workingValues["value"] = decodeComplex128(binaryData, JSONschema);
+      } else {
+        throw new Error("invalid schema; invalid complex size");
+      }
+      break;
+
+    default:
+      console.log(
+        `warning: skipped unsupported schema type ${JSONschema.type}`
+      );
+      break;
+  }
+
+  return new SchemerDecoder(workingValues, JSONschema);
+}
+
+// uses the passed in SchemaDecoder to
+export function PopulateStruct(
+  struct: Record<string, any>,
+  SchemaDecoder: SchemerDecoder
+) {
+  console.log(struct);
+  console.log(SchemaDecoder);
 }
